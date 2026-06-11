@@ -216,7 +216,7 @@
 
         /* 连击显示 */
         .combo {
-            position: fixed;
+            position: absolute;
             font-size: 36px;
             font-weight: bold;
             color: #ffd700;
@@ -226,10 +226,28 @@
             z-index: 50;
         }
 
+        /* 飘分显示 */
+        .score-pop {
+            position: absolute;
+            font-size: 26px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 0 2px 6px rgba(0,0,0,0.4);
+            pointer-events: none;
+            animation: combo-float 0.8s ease-out forwards;
+            z-index: 50;
+        }
+
         @keyframes combo-float {
             0% { transform: translateY(0) scale(0.5); opacity: 0; }
             20% { transform: translateY(-20px) scale(1.2); opacity: 1; }
             100% { transform: translateY(-60px) scale(1); opacity: 0; }
+        }
+
+        /* 时间紧迫警告 */
+        @keyframes time-warning {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); background: linear-gradient(135deg, #ff4757 0%, #c0392b 100%); }
         }
 
         /* 难度选择 */
@@ -307,8 +325,10 @@
     <div class="overlay" id="endScreen" style="display: none;">
         <div class="modal">
             <h1>🎉 游戏结束!</h1>
+            <p id="newRecord" style="display:none; color:#f5576c; font-weight:bold;">🏆 新纪录！</p>
             <p>你真棒！</p>
             <div class="final-score"><span id="finalScore">0</span> 分</div>
+            <p>历史最高: <span id="bestScore">0</span> 分</p>
             <button class="btn" onclick="restartGame()">再玩一次 🔄</button>
         </div>
     </div>
@@ -406,12 +426,11 @@
             bubble.style.left = Math.random() * (container.offsetWidth - type.size) + 'px';
             bubble.style.top = container.offsetHeight + 'px';
             bubble.innerHTML = type.emoji;
-            bubble.dataset.score = type.score;
             
-            // 点击事件
-            bubble.addEventListener('click', function(e) {
-                if (!gameActive || this.classList.contains('popped')) return;
-                
+            // 戳破泡泡
+            function popBubble(x, y) {
+                if (!gameActive || bubble.classList.contains('popped')) return;
+
                 // 连击检测
                 const now = Date.now();
                 if (now - lastClickTime < 1000) {
@@ -420,35 +439,38 @@
                     combo = 1;
                 }
                 lastClickTime = now;
-                
+
                 // 计算得分（连击加成）
-                const points = parseInt(this.dataset.score) * Math.min(combo, 5);
+                const points = type.score * Math.min(combo, 5);
                 score += points;
                 updateScore();
-                
+
                 // 播放音效（每种泡泡独特音色）
+                playBubbleSound(type.sound);
                 if (combo > 1) {
                     playComboSound();
-                    showCombo(e.clientX, e.clientY, combo);
-                } else {
-                    playBubbleSound(type.sound);
+                    showCombo(x, y, combo);
                 }
-                
+                showScorePop(x, y, points);
+
                 // 创建粒子效果
-                createParticles(e.clientX, e.clientY, type.color);
-                
+                createParticles(x, y, type.color);
+
                 // 破裂动画
-                this.classList.add('popped');
+                bubble.classList.add('popped');
                 setTimeout(() => {
-                    this.remove();
-                    bubbles = bubbles.filter(b => b !== this);
+                    bubble.remove();
+                    bubbles = bubbles.filter(b => b !== bubble);
                 }, 300);
-            });
-            
-            // 触摸事件（移动端支持）
+            }
+
+            bubble.addEventListener('click', e => popBubble(e.clientX, e.clientY));
+
+            // 触摸事件（移动端支持，使用真实触点坐标）
             bubble.addEventListener('touchstart', function(e) {
                 e.preventDefault();
-                this.click();
+                const touch = e.touches[0];
+                popBubble(touch.clientX, touch.clientY);
             });
             
             container.appendChild(bubble);
@@ -468,7 +490,7 @@
             setTimeout(() => {
                 if (bubble.parentNode && !bubble.classList.contains('popped')) {
                     bubble.remove();
-                    bubbles = bubbles.filter(b => b !== this);
+                    bubbles = bubbles.filter(b => b !== bubble);
                     combo = 0; // 错过泡泡重置连击
                 }
             }, duration + 100);
@@ -477,31 +499,46 @@
         // 创建粒子效果
         function createParticles(x, y, color) {
             const container = document.getElementById('gameContainer');
-            for (let i = 0; i < 8; i++) {
+            const rect = container.getBoundingClientRect();
+            for (let i = 0; i < 12; i++) {
                 const particle = document.createElement('div');
                 particle.className = 'particle';
                 particle.style.background = color;
-                particle.style.left = x + 'px';
-                particle.style.top = y + 'px';
-                
-                const angle = (Math.PI * 2 * i) / 8;
-                const distance = 50 + Math.random() * 50;
+                particle.style.left = (x - rect.left) + 'px';
+                particle.style.top = (y - rect.top) + 'px';
+
+                const angle = (Math.PI * 2 * i) / 12 + Math.random() * 0.5;
+                const distance = 50 + Math.random() * 60;
                 particle.style.setProperty('--tx', Math.cos(angle) * distance + 'px');
                 particle.style.setProperty('--ty', Math.sin(angle) * distance + 'px');
-                
+
                 container.appendChild(particle);
                 setTimeout(() => particle.remove(), 600);
             }
         }
 
+        // 显示飘分
+        function showScorePop(x, y, points) {
+            const container = document.getElementById('gameContainer');
+            const rect = container.getBoundingClientRect();
+            const el = document.createElement('div');
+            el.className = 'score-pop';
+            el.textContent = `+${points}`;
+            el.style.left = (x - rect.left) + 'px';
+            el.style.top = (y - rect.top) + 'px';
+            container.appendChild(el);
+            setTimeout(() => el.remove(), 800);
+        }
+
         // 显示连击
         function showCombo(x, y, comboCount) {
             const container = document.getElementById('gameContainer');
+            const rect = container.getBoundingClientRect();
             const comboEl = document.createElement('div');
             comboEl.className = 'combo';
             comboEl.textContent = `${comboCount} 连击! x${Math.min(comboCount, 5)}`;
-            comboEl.style.left = x + 'px';
-            comboEl.style.top = y + 'px';
+            comboEl.style.left = (x - rect.left) + 'px';
+            comboEl.style.top = (y - rect.top) + 'px';
             container.appendChild(comboEl);
             setTimeout(() => comboEl.remove(), 1000);
         }
@@ -522,7 +559,10 @@
 
         // 更新时间
         function updateTime() {
-            document.getElementById('time').textContent = timeLeft;
+            const timeEl = document.getElementById('time');
+            timeEl.textContent = timeLeft;
+            // 最后 10 秒红色闪烁提醒
+            timeEl.parentElement.style.animation = (timeLeft <= 10 && timeLeft > 0) ? 'time-warning 0.5s ease-in-out infinite' : '';
             if (timeLeft <= 0) {
                 endGame();
             }
@@ -530,7 +570,12 @@
 
         // 开始游戏
         function startGame() {
+            // 浏览器自动播放限制：需在用户手势后恢复音频
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
             document.getElementById('startScreen').style.display = 'none';
+            document.getElementById('gameContainer').innerHTML = '';
             score = 0;
             timeLeft = 60;
             combo = 0;
@@ -538,7 +583,12 @@
             bubbles = [];
             updateScore();
             updateTime();
-            
+
+            // 立即生成几个泡泡，避免开局空等
+            for (let i = 0; i < 3; i++) {
+                setTimeout(createBubble, i * 200);
+            }
+
             // 开始生成泡泡
             spawnInterval = setInterval(createBubble, config[currentDifficulty].spawnRate);
             
@@ -554,7 +604,17 @@
             gameActive = false;
             clearInterval(spawnInterval);
             clearInterval(timerInterval);
-            
+
+            // 清除剩余泡泡
+            document.getElementById('gameContainer').innerHTML = '';
+            bubbles = [];
+
+            // 最高分记录
+            const best = Math.max(score, parseInt(localStorage.getItem('paopao-best') || '0', 10));
+            localStorage.setItem('paopao-best', best);
+            document.getElementById('bestScore').textContent = best;
+            document.getElementById('newRecord').style.display = (score >= best && score > 0) ? 'block' : 'none';
+
             document.getElementById('finalScore').textContent = score;
             document.getElementById('endScreen').style.display = 'flex';
         }
@@ -562,7 +622,6 @@
         // 重新开始
         function restartGame() {
             document.getElementById('endScreen').style.display = 'none';
-            document.getElementById('gameContainer').innerHTML = '';
             document.getElementById('startScreen').style.display = 'flex';
         }
 
